@@ -8,7 +8,7 @@ from openai import OpenAI
 
 
 def get_openai_client() -> OpenAI:
-	api_key = "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"
+	api_key = "sk-proj-"
 	base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	if not api_key:
 		raise RuntimeError("OPENAI_API_KEY is not set")
@@ -48,3 +48,4 @@ def chat_text(
 		max_tokens=max_tokens,
 	)
 	return resp.choices[0].message.content or ""
+
