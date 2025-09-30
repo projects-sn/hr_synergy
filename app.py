@@ -4,7 +4,6 @@ import os
 import json
 import orjson
 import streamlit as st
-import tempfile
 
 from prompts import (
 	ANALYZER_SYSTEM_PROMPT,
@@ -12,17 +11,13 @@ from prompts import (
 	EDITOR_SYSTEM_PROMPT,
 	EDITOR_USER_TEMPLATE,
 )
-from llm_client import chat_json, chat_text, get_llm_config, connectivity_check
+from llm_client import chat_json, chat_text
 from pdf_utils import extract_text_from_pdf
 
 ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o-mini")
 EDITOR_MODEL = os.getenv("EDITOR_MODEL", "gpt-4o")
 
 st.set_page_config(page_title="Нейро‑HR — анализ и редактура резюме", layout="wide")
-
-# Prepare a safe temp directory for file operations (works on Streamlit Cloud)
-if "tmp_dir" not in st.session_state:
-    st.session_state["tmp_dir"] = tempfile.mkdtemp(prefix="synergy_hr_")
 
 st.title("🎯 Нейро‑HR — анализ и редактура резюме")
 
@@ -34,24 +29,10 @@ with st.sidebar:
 	analyzer_temp = st.slider("Температура Анализатор", 0.0, 0.5, 0.1, 0.1)
 	editor_temp = st.slider("Температура Редактор", 0.0, 0.6, 0.3, 0.1)
 
-	with st.expander("Диагностика LLM"):
-		cfg = get_llm_config()
-		st.write({
-			"openai_key_present": cfg.get("key_present"),
-			"openai_base_url": cfg.get("base_url"),
-		})
-		if st.button("Проверить соединение с OpenAI"):
-			with st.spinner("Проверка…"):
-				result = connectivity_check()
-				if result.get("ok"):
-					st.success("Соединение успешно")
-				else:
-					st.error(f"Ошибка соединения: {result.get('error')}")
-
 
 def load_resume_text() -> str:
 	if resume_pdf is not None:
-		# Save to temp and extract (within session temp dir)
+		# Save to temp and extract
 		tmp_path = os.path.join(st.session_state.get("tmp_dir", "."), "_resume_tmp.pdf")
 		with open(tmp_path, "wb") as f:
 			f.write(resume_pdf.getbuffer())
