@@ -6,14 +6,12 @@ from typing import Any, Dict, List
 
 from openai import OpenAI
 
-
 def get_openai_client() -> OpenAI:
-	api_key = "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"
-	base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-	if not api_key:
-		raise RuntimeError("OPENAI_API_KEY is not set")
-	return OpenAI(api_key=api_key, base_url=base_url)
-
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 def chat_json(
 	messages: List[Dict[str, Any]],
@@ -48,3 +46,4 @@ def chat_text(
 		max_tokens=max_tokens,
 	)
 	return resp.choices[0].message.content or ""
+
