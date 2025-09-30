@@ -5,14 +5,27 @@ import orjson
 from typing import Any, Dict, List
 
 from openai import OpenAI
+import streamlit as st
 
 
 def get_openai_client() -> OpenAI:
-	api_key = "sk-proj-"
-	base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-	if not api_key:
-		raise RuntimeError("OPENAI_API_KEY is not set")
-	return OpenAI(api_key=api_key, base_url=base_url)
+    """Create OpenAI client using Streamlit secrets or environment variables.
+
+    Precedence: st.secrets > env vars. Fails fast if key is missing.
+    """
+    api_key = (
+        st.secrets.get("OPENAI_API_KEY")
+        if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets
+        else os.getenv("OPENAI_API_KEY")
+    )
+    base_url = (
+        st.secrets.get("OPENAI_BASE_URL")
+        if hasattr(st, "secrets") and "OPENAI_BASE_URL" in st.secrets
+        else os.getenv("OPENAI_BASE_URL", "https:\/\/api.openai.com\/v1")
+    )
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set (use Streamlit secrets or env var)")
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
 def chat_json(
@@ -48,4 +61,3 @@ def chat_text(
 		max_tokens=max_tokens,
 	)
 	return resp.choices[0].message.content or ""
-
