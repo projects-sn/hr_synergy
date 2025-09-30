@@ -13,11 +13,15 @@ from prompts import (
 )
 from llm_client import chat_json, chat_text
 from pdf_utils import extract_text_from_pdf
+import tempfile
 
 ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o-mini")
 EDITOR_MODEL = os.getenv("EDITOR_MODEL", "gpt-4o")
 
 st.set_page_config(page_title="Нейро‑HR — анализ и редактура резюме", layout="wide")
+
+if "tmp_dir" not in st.session_state:
+    st.session_state["tmp_dir"] = tempfile.mkdtemp(prefix="synergy_hr_")
 
 st.title("🎯 Нейро‑HR — анализ и редактура резюме")
 
@@ -189,4 +193,5 @@ if "editor_output" in st.session_state:
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 st.divider()
+
 
