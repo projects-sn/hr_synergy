@@ -77,6 +77,91 @@ def _is_valid_analysis(analysis_json: dict) -> bool:
     return True
 
 
+def _coerce_to_str(value) -> str:
+    try:
+        if value is None:
+            return ""
+        return str(value)
+    except Exception:
+        return ""
+
+
+def _repair_analysis_min_schema(analysis_json: dict) -> dict:
+    """Fill missing required keys with safe defaults to satisfy minimal UI needs."""
+    if not isinstance(analysis_json, dict):
+        analysis_json = {}
+
+    # overall_assessment
+    analysis_json.setdefault("overall_assessment", "")
+
+    # clarity_assessment
+    clarity = analysis_json.get("clarity_assessment")
+    if not isinstance(clarity, dict):
+        clarity = {}
+    clarity.setdefault("rating", "medium")
+    clarity.setdefault("why", "")
+    clarity.setdefault("examples", [])
+    clarity.setdefault("suggestion", "")
+    clarity.setdefault("evidence_snippet", "")
+    analysis_json["clarity_assessment"] = clarity
+
+    # completeness_check
+    cc = analysis_json.get("completeness_check")
+    if not isinstance(cc, list):
+        cc = []
+    analysis_json["completeness_check"] = cc
+
+    # volume_assessment
+    va = analysis_json.get("volume_assessment")
+    if not isinstance(va, dict):
+        va = {}
+    if "estimated_pages" in va:
+        va["estimated_pages"] = _coerce_to_str(va.get("estimated_pages"))
+    else:
+        va["estimated_pages"] = ""
+    if "estimated_words" in va:
+        va["estimated_words"] = _coerce_to_str(va.get("estimated_words"))
+    else:
+        va["estimated_words"] = ""
+    va.setdefault("relative_to_average", "")
+    va.setdefault("relative_to_golden_standard", "")
+    va.setdefault("why", "")
+    va.setdefault("suggestion", "")
+    analysis_json["volume_assessment"] = va
+
+    # keywords_match
+    km = analysis_json.get("keywords_match")
+    if not isinstance(km, dict):
+        km = {}
+    km.setdefault("from_jd", [])
+    km.setdefault("required_keywords", [])
+    km.setdefault("found_exact", [])
+    km.setdefault("found_fuzzy", [])
+    km.setdefault("missing", [])
+    km.setdefault("coverage_percent", 0)
+    analysis_json["keywords_match"] = km
+
+    # top_issues
+    ti = analysis_json.get("top_issues")
+    if not isinstance(ti, list):
+        ti = []
+    analysis_json["top_issues"] = ti
+
+    # priority_fix_list
+    pfl = analysis_json.get("priority_fix_list")
+    if not isinstance(pfl, list):
+        pfl = []
+    analysis_json["priority_fix_list"] = pfl
+
+    # optional arrays for UI
+    if not isinstance(analysis_json.get("risks"), list):
+        analysis_json["risks"] = []
+    if not isinstance(analysis_json.get("candidate_questions"), list):
+        analysis_json["candidate_questions"] = []
+
+    return analysis_json
+
+
 def format_analysis_report(analysis_json: dict) -> str:
 	"""Форматирует JSON-отчёт Анализатора в человекочитаемый Markdown"""
 	report = []
@@ -287,7 +372,14 @@ if st.button("Запустить анализ"):
                         except Exception as _:
                             st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
                     else:
-                        st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
+                        # Попробуем авто-восстановление даже при ошибке, если объект присутствует
+                        repaired_err = _repair_analysis_min_schema(analysis_json if isinstance(analysis_json, dict) else {})
+                        if _is_valid_analysis(repaired_err):
+                            st.session_state["analysis_json"] = repaired_err
+                            st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме (из ответа с ошибкой).")
+                            st.success("Готово: отчёт сформирован")
+                        else:
+                            st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
                 else:
                     # Если вернулся JSON без ключа error, но он не соответствует схеме — попросим строгую регенерацию
                     if not _is_valid_analysis(analysis_json):
@@ -309,9 +401,22 @@ if st.button("Запустить анализ"):
                                 st.session_state["analysis_json"] = analysis_json2
                                 st.success("Готово: отчёт сформирован")
                             else:
-                                st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
+                                # Попытка авто-восстановления минимального набора полей
+                                repaired = _repair_analysis_min_schema(analysis_json2 if isinstance(analysis_json2, dict) else {})
+                                if _is_valid_analysis(repaired):
+                                    st.session_state["analysis_json"] = repaired
+                                    st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме.")
+                                    st.success("Готово: отчёт сформирован")
+                                else:
+                                    st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
                         except Exception as _:
-                            st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
+                            repaired = _repair_analysis_min_schema(analysis_json if isinstance(analysis_json, dict) else {})
+                            if _is_valid_analysis(repaired):
+                                st.session_state["analysis_json"] = repaired
+                                st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме.")
+                                st.success("Готово: отчёт сформирован")
+                            else:
+                                st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
                     else:
                         st.session_state["analysis_json"] = analysis_json
                         st.success("Готово: отчёт сформирован")
