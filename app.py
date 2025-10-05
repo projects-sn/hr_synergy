@@ -482,13 +482,31 @@ st.divider()
 
 st.header("🔹 Оценка зарплатной вилки (RUB/мес)")
 with st.expander("Показать/скрыть оценку зарплаты"):
+	import importlib.util, sys
+
+	def _get_estimate_salary_from_resume():
+		try:
+			from salary_estimator import estimate_salary_from_resume  # type: ignore
+			return estimate_salary_from_resume
+		except ModuleNotFoundError:
+			# Fallback: загрузить модуль по пути файла рядом с app.py
+			base_dir = os.path.dirname(__file__)
+			module_path = os.path.join(base_dir, "salary_estimator.py")
+			spec = importlib.util.spec_from_file_location("salary_estimator", module_path)
+			if spec and spec.loader:
+				mod = importlib.util.module_from_spec(spec)
+				sys.modules["salary_estimator"] = mod
+				spec.loader.exec_module(mod)  # type: ignore
+				return getattr(mod, "estimate_salary_from_resume")
+			raise
+
 	try:
-		from salary_estimator import estimate_salary_from_resume
+		estimator = _get_estimate_salary_from_resume()
 		_resume_text = load_resume_text()
 		if not _resume_text:
 			st.info("Загрузите PDF резюме, чтобы автоматически оценить вилку и подходящие роли.")
 		else:
-			result = estimate_salary_from_resume(
+			result = estimator(
 				resume_text=_resume_text,
 				job_description=job_description or None,
 				model=ANALYZER_MODEL,
