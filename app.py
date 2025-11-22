@@ -5,14 +5,14 @@ import json
 import orjson
 import streamlit as st
 
-from synergy_hr.prompts import (
+from prompts import (
 	ANALYZER_SYSTEM_PROMPT,
 	ANALYZER_USER_TEMPLATE,
 	EDITOR_SYSTEM_PROMPT,
 	EDITOR_USER_TEMPLATE,
 )
-from synergy_hr.llm_client import chat_json, chat_text
-from synergy_hr.pdf_utils import extract_text_from_pdf
+from llm_client import chat_json, chat_text
+from pdf_utils import extract_text_from_pdf
 
 ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o-mini")
 EDITOR_MODEL = os.getenv("EDITOR_MODEL", "gpt-4o")
@@ -263,3 +263,4 @@ if "editor_output" in st.session_state:
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 st.divider()
+
