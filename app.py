@@ -24,10 +24,7 @@ st.title("🎯 Нейро‑HR — анализ и редактура резюм
 with st.sidebar:
 	st.header("Входные данные")
 	resume_pdf = st.file_uploader("Загрузите PDF резюме", type=["pdf"])  # type: ignore
-	resume_text_manual = st.text_area("Или вставьте текст резюме", height=180)
 	job_description = st.text_area("Описание вакансии", height=180)
-	analyzer_temp = st.slider("Температура Анализатор", 0.0, 0.5, 0.1, 0.1)
-	editor_temp = st.slider("Температура Редактор", 0.0, 0.6, 0.3, 0.1)
 
 
 def load_resume_text() -> str:
@@ -37,7 +34,7 @@ def load_resume_text() -> str:
 		with open(tmp_path, "wb") as f:
 			f.write(resume_pdf.getbuffer())
 		return extract_text_from_pdf(tmp_path)
-	return resume_text_manual.strip()
+	return ""
 
 
 def format_analysis_report(analysis_json: dict) -> str:
@@ -188,11 +185,11 @@ def format_analysis_report(analysis_json: dict) -> str:
 	return "\n".join(report)
 
 
-st.header("🔹 1) Анализатор")
+	st.header("🔹 1) Анализатор")
 if st.button("Запустить анализ"):
 	resume_text = load_resume_text()
 	if not resume_text:
-		st.warning("Требуется резюме (PDF или текст)")
+		st.warning("Требуется загрузить PDF резюме")
 	else:
 		user_prompt = ANALYZER_USER_TEMPLATE.format(
 			resume_text=resume_text,
@@ -207,7 +204,7 @@ if st.button("Запустить анализ"):
 				analysis_json = chat_json(
 					messages=messages,
 					model=ANALYZER_MODEL,
-					temperature=float(analyzer_temp),
+					temperature=0.1,
 				)
 				st.session_state["analysis_json"] = analysis_json
 				st.success("Готово: отчёт сформирован")
@@ -232,7 +229,7 @@ st.header("🔹 2) Редактор")
 if st.button("Сгенерировать улучшенное резюме"):
 	resume_text = load_resume_text()
 	if not resume_text:
-		st.warning("Требуется резюме (PDF или текст)")
+		st.warning("Требуется загрузить PDF резюме")
 	else:
 		if "analysis_json" not in st.session_state:
 			st.info("Сначала запустите Анализатор — его вывод используется Редактором")
@@ -251,7 +248,7 @@ if st.button("Сгенерировать улучшенное резюме"):
 				editor_output = chat_text(
 					messages=messages,
 					model=EDITOR_MODEL,
-					temperature=float(editor_temp),
+					temperature=0.3,
 				)
 				st.session_state["editor_output"] = editor_output
 				st.success("Готово: резюме сгенерировано")
@@ -263,4 +260,3 @@ if "editor_output" in st.session_state:
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 st.divider()
-
