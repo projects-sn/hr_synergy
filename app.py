@@ -13,6 +13,7 @@ from prompts import (
 )
 from llm_client import chat_json, chat_text
 from pdf_utils import extract_text_from_pdf
+from salary_estimator import estimate_salary_from_resume
 
 ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o-mini")
 EDITOR_MODEL = os.getenv("EDITOR_MODEL", "gpt-4o")
@@ -185,7 +186,83 @@ def format_analysis_report(analysis_json: dict) -> str:
 	return "\n".join(report)
 
 
-	st.header("🔹 1) Анализатор")
+def format_salary_report(salary_json: dict) -> str:
+	"""Форматирует JSON-отчёт оценки зарплаты в человекочитаемый Markdown"""
+	report = []
+	
+	# Общая оценка зарплаты
+	if "estimate_rub_month" in salary_json:
+		est = salary_json["estimate_rub_month"]
+		report.append("### 💰 Оценка зарплаты")
+		min_val = est.get('min', 0)
+		max_val = est.get('max', 0)
+		if min_val and max_val:
+			report.append(f"**Диапазон:** {min_val:,} — {max_val:,} руб/мес")
+		else:
+			report.append(f"**Диапазон:** не указано")
+		if "median" in est and est.get('median'):
+			report.append(f"**Медиана:** {est['median']:,} руб/мес")
+		report.append("")
+	
+	# Роли
+	if "roles" in salary_json and salary_json["roles"]:
+		report.append("### Подходящие роли")
+		for i, role in enumerate(salary_json["roles"], 1):
+			report.append(f"#### {i}. {role.get('title', 'Не указано')}")
+			if role.get('direction'):
+				report.append(f"**Направление:** {role['direction']}")
+			if role.get('seniority'):
+				report.append(f"**Уровень:** {role['seniority']}")
+			if role.get('fit_reason'):
+				report.append(f"**Почему подходит:** {role['fit_reason']}")
+			report.append("")
+	
+	# Диапазоны по ролям
+	if "ranges_per_role" in salary_json and salary_json["ranges_per_role"]:
+		report.append("### Диапазоны зарплат по ролям")
+		for role_range in salary_json["ranges_per_role"]:
+			title = role_range.get('title', 'Не указано')
+			min_sal = role_range.get('min', 0)
+			max_sal = role_range.get('max', 0)
+			median_sal = role_range.get('median', 0)
+			report.append(f"**{title}:** {min_sal:,} — {max_sal:,} руб/мес (медиана: {median_sal:,})")
+		report.append("")
+	
+	# Уверенность
+	if "confidence" in salary_json:
+		confidence = salary_json["confidence"]
+		confidence_ru = {
+			"high": "высокая",
+			"medium": "средняя",
+			"low": "низкая"
+		}.get(confidence, confidence)
+		report.append(f"**Уверенность оценки:** {confidence_ru}")
+		report.append("")
+	
+	# Допущения
+	if "assumptions" in salary_json and salary_json["assumptions"]:
+		report.append("### Допущения")
+		for assumption in salary_json["assumptions"]:
+			report.append(f"- {assumption}")
+		report.append("")
+	
+	# Источники
+	if "sources" in salary_json and salary_json["sources"]:
+		report.append("### Источники")
+		for source in salary_json["sources"]:
+			report.append(f"- {source}")
+		report.append("")
+	
+	# Примечания
+	if "notes" in salary_json and salary_json["notes"]:
+		report.append("### Примечания")
+		report.append(salary_json["notes"])
+		report.append("")
+	
+	return "\n".join(report)
+
+
+st.header("🔹 1) Анализатор")
 if st.button("Запустить анализ"):
 	resume_text = load_resume_text()
 	if not resume_text:
@@ -251,5 +328,27 @@ if "editor_output" in st.session_state:
 	st.subheader("Итог (Markdown с разделами)")
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
-st.divider()
 
+st.header("🔹 3) Оценка зарплаты")
+if st.button("Оценить зарплату"):
+	resume_text = load_resume_text()
+	if not resume_text:
+		st.warning("Требуется загрузить PDF резюме")
+	else:
+		with st.spinner("Модель оценивает зарплату…"):
+			try:
+				salary_json = estimate_salary_from_resume(
+					resume_text=resume_text,
+					job_description=job_description or None,
+				)
+				st.session_state["salary_json"] = salary_json
+				st.success("Готово: оценка зарплаты сформирована")
+			except Exception as e:
+				st.error(f"Ошибка LLM: {e}")
+
+# Показываем результаты оценки зарплаты
+if "salary_json" in st.session_state:
+	salary_json = st.session_state["salary_json"]
+	st.markdown(format_salary_report(salary_json))
+
+st.divider()
