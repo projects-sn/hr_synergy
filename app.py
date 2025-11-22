@@ -262,7 +262,7 @@ def format_salary_report(salary_json: dict) -> str:
 	return "\n".join(report)
 
 
-st.header("🔹 1) Анализатор")
+st.header("🔹 Анализатор")
 if st.button("Запустить анализ"):
 	resume_text = load_resume_text()
 	if not resume_text:
@@ -294,7 +294,7 @@ if "analysis_json" in st.session_state:
 	st.markdown(format_analysis_report(analysis_json))
 
 
-st.header("🔹 2) Редактор")
+st.header("🔹 Редактор")
 if st.button("Сгенерировать улучшенное резюме"):
 	resume_text = load_resume_text()
 	if not resume_text:
@@ -329,7 +329,7 @@ if "editor_output" in st.session_state:
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 
-st.header("🔹 3) Оценка зарплаты")
+st.header("🔹 Оценка зарплаты")
 if st.button("Оценить зарплату"):
 	resume_text = load_resume_text()
 	if not resume_text:
@@ -352,3 +352,4 @@ if "salary_json" in st.session_state:
 	st.markdown(format_salary_report(salary_json))
 
 st.divider()
+
