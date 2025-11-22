@@ -186,79 +186,92 @@ def format_analysis_report(analysis_json: dict) -> str:
 	return "\n".join(report)
 
 
-def format_salary_report(salary_json: dict) -> str:
-	"""Форматирует JSON-отчёт оценки зарплаты в человекочитаемый Markdown"""
-	report = []
+def display_salary_report(salary_json: dict):
+	"""Отображает JSON-отчёт оценки зарплаты в красивом формате"""
 	
-	# Общая оценка зарплаты
+	# Общая оценка зарплаты - используем метрики
 	if "estimate_rub_month" in salary_json:
 		est = salary_json["estimate_rub_month"]
 		min_val = est.get('min', 0)
 		max_val = est.get('max', 0)
+		median_val = est.get('median', 0)
+		
 		if min_val and max_val:
-			report.append(f"**Диапазон:** {min_val:,} — {max_val:,} руб/мес")
-		else:
-			report.append(f"**Диапазон:** не указано")
-		if "median" in est and est.get('median'):
-			report.append(f"**Медиана:** {est['median']:,} руб/мес")
-		report.append("")
+			col1, col2, col3 = st.columns(3)
+			with col1:
+				st.metric("Минимум", f"{min_val:,} ₽/мес")
+			with col2:
+				st.metric("Медиана", f"{median_val:,} ₽/мес" if median_val else "—")
+			with col3:
+				st.metric("Максимум", f"{max_val:,} ₽/мес")
+			st.markdown("---")
 	
 	# Роли
 	if "roles" in salary_json and salary_json["roles"]:
-		report.append("### Подходящие роли")
+		st.subheader("🎯 Подходящие роли")
 		for i, role in enumerate(salary_json["roles"], 1):
-			report.append(f"#### {i}. {role.get('title', 'Не указано')}")
-			if role.get('direction'):
-				report.append(f"**Направление:** {role['direction']}")
-			if role.get('seniority'):
-				report.append(f"**Уровень:** {role['seniority']}")
-			if role.get('fit_reason'):
-				report.append(f"**Почему подходит:** {role['fit_reason']}")
-			report.append("")
+			with st.expander(f"{i}. {role.get('title', 'Не указано')}", expanded=(i == 1)):
+				if role.get('direction'):
+					st.write(f"**Направление:** {role['direction']}")
+				if role.get('seniority'):
+					st.write(f"**Уровень:** {role['seniority']}")
+				if role.get('fit_reason'):
+					st.write(f"**Почему подходит:** {role['fit_reason']}")
+		st.markdown("---")
 	
 	# Диапазоны по ролям
 	if "ranges_per_role" in salary_json and salary_json["ranges_per_role"]:
-		report.append("### Диапазоны зарплат по ролям")
+		st.subheader("📊 Диапазоны зарплат по ролям")
 		for role_range in salary_json["ranges_per_role"]:
 			title = role_range.get('title', 'Не указано')
 			min_sal = role_range.get('min', 0)
 			max_sal = role_range.get('max', 0)
 			median_sal = role_range.get('median', 0)
-			report.append(f"**{title}:** {min_sal:,} — {max_sal:,} руб/мес (медиана: {median_sal:,})")
-		report.append("")
+			
+			if min_sal and max_sal:
+				st.write(f"**{title}**")
+				col1, col2, col3 = st.columns(3)
+				with col1:
+					st.write(f"От: **{min_sal:,} ₽/мес**")
+				with col2:
+					if median_sal:
+						st.write(f"Медиана: **{median_sal:,} ₽/мес**")
+				with col3:
+					st.write(f"До: **{max_sal:,} ₽/мес**")
+				st.markdown("")
+		st.markdown("---")
 	
-	# Уверенность
-	if "confidence" in salary_json:
-		confidence = salary_json["confidence"]
-		confidence_ru = {
-			"high": "высокая",
-			"medium": "средняя",
-			"low": "низкая"
-		}.get(confidence, confidence)
-		report.append(f"**Уверенность оценки:** {confidence_ru}")
-		report.append("")
+	# Уверенность и дополнительная информация
+	col1, col2 = st.columns(2)
+	
+	with col1:
+		if "confidence" in salary_json:
+			confidence = salary_json["confidence"]
+			confidence_ru = {
+				"high": "высокая",
+				"medium": "средняя",
+				"low": "низкая"
+			}.get(confidence, confidence)
+			st.info(f"**Уверенность оценки:** {confidence_ru}")
 	
 	# Допущения
 	if "assumptions" in salary_json and salary_json["assumptions"]:
-		report.append("### Допущения")
-		for assumption in salary_json["assumptions"]:
-			report.append(f"- {assumption}")
-		report.append("")
-	
-	# Источники
-	if "sources" in salary_json and salary_json["sources"]:
-		report.append("### Источники")
-		for source in salary_json["sources"]:
-			report.append(f"- {source}")
-		report.append("")
+		with st.expander("📝 Допущения и источники"):
+			st.write("**Допущения:**")
+			for assumption in salary_json["assumptions"]:
+				st.write(f"• {assumption}")
+			
+			if "sources" in salary_json and salary_json["sources"]:
+				st.write("")
+				st.write("**Источники:**")
+				for source in salary_json["sources"]:
+					st.write(f"• {source}")
 	
 	# Примечания
 	if "notes" in salary_json and salary_json["notes"]:
-		report.append("### Примечания")
-		report.append(salary_json["notes"])
-		report.append("")
-	
-	return "\n".join(report)
+		st.markdown("---")
+		st.write("**Примечания:**")
+		st.write(salary_json["notes"])
 
 
 st.header("🔹 Анализатор")
@@ -348,9 +361,6 @@ if st.button("Оценить зарплату"):
 # Показываем результаты оценки зарплаты
 if "salary_json" in st.session_state:
 	salary_json = st.session_state["salary_json"]
-	st.markdown(format_salary_report(salary_json))
+	display_salary_report(salary_json)
 
 st.divider()
-
-
-
