@@ -148,29 +148,26 @@ def format_analysis_report(analysis_json: dict) -> str:
 			report.append(f"### {field_title}")
 			for sub_key, sub_value in value.items():
 				sub_title = str(sub_key).replace("_", " ").title()
-				# Специальная обработка для полей "рейтинг" и "обоснование"
-				if sub_key in ["рейтинг", "rating"]:
-					# Преобразуем английские значения рейтинга в русские
-					if isinstance(sub_value, str):
-						rating_map = {
-							"high": "высокий",
-							"medium": "средний",
-							"MEDIUM": "средний",
-							"low": "низкий",
-							"optimal": "оптимальный",
-							"meets": "соответствует"
-						}
-						sub_value = rating_map.get(sub_value.lower(), sub_value)
-					report.append(f"**Рейтинг:** {sub_value}")
-				elif sub_key in ["обоснование", "justification", "reason"]:
-					report.append(f"**Обоснование:** {sub_value}")
+				# Форматируем название поля на русском
+				if sub_key == "рейтинг":
+					sub_title = "Рейтинг"
+				elif sub_key == "обоснование":
+					sub_title = "Обоснование"
+				elif sub_key == "статус":
+					sub_title = "Статус"
+				elif sub_key == "justification":
+					sub_title = "Обоснование"
+				elif sub_key == "reason":
+					sub_title = "Обоснование"
+				elif sub_key == "rating":
+					sub_title = "Рейтинг"
+				
+				if isinstance(sub_value, str):
+					report.append(f"**{sub_title}:** {sub_value}")
+				elif isinstance(sub_value, (list, dict)) and len(sub_value) > 0:
+					report.append(f"**{sub_title}:** {sub_value}")
 				else:
-					if isinstance(sub_value, str):
-						report.append(f"**{sub_title}:** {sub_value}")
-					elif isinstance(sub_value, (list, dict)) and len(sub_value) > 0:
-						report.append(f"**{sub_title}:** {sub_value}")
-					else:
-						report.append(f"**{sub_title}:** {sub_value}")
+					report.append(f"**{sub_title}:** {sub_value}")
 			report.append("")
 		elif isinstance(value, list):
 			report.append(f"### {field_title}")
