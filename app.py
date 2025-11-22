@@ -193,7 +193,6 @@ def format_salary_report(salary_json: dict) -> str:
 	# Общая оценка зарплаты
 	if "estimate_rub_month" in salary_json:
 		est = salary_json["estimate_rub_month"]
-		report.append("### 💰 Оценка зарплаты")
 		min_val = est.get('min', 0)
 		max_val = est.get('max', 0)
 		if min_val and max_val:
@@ -201,7 +200,7 @@ def format_salary_report(salary_json: dict) -> str:
 		else:
 			report.append(f"**Диапазон:** не указано")
 		if "median" in est and est.get('median'):
-			report.append(f"**Медиана:** {est['median']:,} руб/мес")
+			report.append(f"**\nМедиана:** {est['median']:,} руб/мес")
 		report.append("")
 	
 	# Роли
@@ -352,4 +351,5 @@ if "salary_json" in st.session_state:
 	st.markdown(format_salary_report(salary_json))
 
 st.divider()
+
 
