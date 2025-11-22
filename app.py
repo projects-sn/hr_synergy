@@ -200,7 +200,7 @@ def format_salary_report(salary_json: dict) -> str:
 		else:
 			report.append(f"**Диапазон:** не указано")
 		if "median" in est and est.get('median'):
-			report.append(f"**\nМедиана:** {est['median']:,} руб/мес")
+			report.append(f"**Медиана:** {est['median']:,} руб/мес")
 		report.append("")
 	
 	# Роли
@@ -351,5 +351,6 @@ if "salary_json" in st.session_state:
 	st.markdown(format_salary_report(salary_json))
 
 st.divider()
+
 
 
