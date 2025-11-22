@@ -214,15 +214,7 @@ if st.button("Запустить анализ"):
 # Показываем результаты анализа
 if "analysis_json" in st.session_state:
 	analysis_json = st.session_state["analysis_json"]
-	
-	# Создаём табы для разных форматов
-	tab1, tab2 = st.tabs(["Анализ резюме", "JSON данные"])
-	
-	with tab1:
-		st.markdown(format_analysis_report(analysis_json))
-	
-	with tab2:
-		st.code(orjson.dumps(analysis_json, option=orjson.OPT_INDENT_2).decode(), language="json")
+	st.markdown(format_analysis_report(analysis_json))
 
 
 st.header("🔹 2) Редактор")
@@ -260,3 +252,4 @@ if "editor_output" in st.session_state:
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 st.divider()
+
