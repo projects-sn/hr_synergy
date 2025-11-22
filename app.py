@@ -5,200 +5,52 @@ import json
 import orjson
 import streamlit as st
 
-from prompts import (
+from synergy_hr.prompts import (
 	ANALYZER_SYSTEM_PROMPT,
 	ANALYZER_USER_TEMPLATE,
 	EDITOR_SYSTEM_PROMPT,
 	EDITOR_USER_TEMPLATE,
 )
-from llm_client import chat_json, chat_text
-from pdf_utils import extract_text_from_pdf
+from synergy_hr.llm_client import chat_json, chat_text
+from synergy_hr.pdf_utils import extract_text_from_pdf
 
-ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o")
+ANALYZER_MODEL = os.getenv("ANALYZER_MODEL", "gpt-4o-mini")
 EDITOR_MODEL = os.getenv("EDITOR_MODEL", "gpt-4o")
 
 st.set_page_config(page_title="Нейро‑HR — анализ и редактура резюме", layout="wide")
-# Widen sidebar
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {width: 500px;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 st.title("🎯 Нейро‑HR — анализ и редактура резюме")
 
 with st.sidebar:
 	st.header("Входные данные")
 	resume_pdf = st.file_uploader("Загрузите PDF резюме", type=["pdf"])  # type: ignore
-	job_description = st.text_area("Описание вакансии", height=450)
+	resume_text_manual = st.text_area("Или вставьте текст резюме", height=180)
+	job_description = st.text_area("Описание вакансии", height=180)
+	analyzer_temp = st.slider("Температура Анализатор", 0.0, 0.5, 0.1, 0.1)
+	editor_temp = st.slider("Температура Редактор", 0.0, 0.6, 0.3, 0.1)
 
 
 def load_resume_text() -> str:
-    if resume_pdf is not None:
-        # Save to temp and extract
-        tmp_path = os.path.join(st.session_state.get("tmp_dir", "."), "_resume_tmp.pdf")
-        with open(tmp_path, "wb") as f:
-            f.write(resume_pdf.getbuffer())
-        return extract_text_from_pdf(tmp_path)
-    return ""
-
-
-def _is_job_description_empty(text: str) -> bool:
-    """Check JD emptiness per system rules: empty string, <20 words, or equals to N/A/none."""
-    if not text or not text.strip():
-        return True
-    lowered = text.strip().lower()
-    if lowered in {"n/a", "na", "none"}:
-        return True
-    # Count words conservatively
-    words = [w for w in lowered.replace("\n", " ").split(" ") if w]
-    return len(words) < 20
-
-
-def _is_valid_analysis(analysis_json: dict) -> bool:
-    """Minimal schema check for analyzer JSON to avoid UI errors."""
-    if not isinstance(analysis_json, dict):
-        return False
-    required_top = [
-        "overall_assessment",
-        "clarity_assessment",
-        "completeness_check",
-        "volume_assessment",
-        "keywords_match",
-        "top_issues",
-        "priority_fix_list",
-    ]
-    for key in required_top:
-        if key not in analysis_json:
-            return False
-    return True
-
-
-def _coerce_to_str(value) -> str:
-    try:
-        if value is None:
-            return ""
-        return str(value)
-    except Exception:
-        return ""
-
-
-def _repair_analysis_min_schema(analysis_json: dict) -> dict:
-    """Fill missing required keys with safe defaults to satisfy minimal UI needs."""
-    if not isinstance(analysis_json, dict):
-        analysis_json = {}
-
-    # overall_assessment
-    analysis_json.setdefault("overall_assessment", "")
-
-    # clarity_assessment
-    clarity = analysis_json.get("clarity_assessment")
-    if not isinstance(clarity, dict):
-        clarity = {}
-    clarity.setdefault("rating", "medium")
-    clarity.setdefault("why", "")
-    clarity.setdefault("examples", [])
-    clarity.setdefault("suggestion", "")
-    clarity.setdefault("evidence_snippet", "")
-    analysis_json["clarity_assessment"] = clarity
-
-    # completeness_check
-    cc = analysis_json.get("completeness_check")
-    if not isinstance(cc, list):
-        cc = []
-    analysis_json["completeness_check"] = cc
-
-    # volume_assessment
-    va = analysis_json.get("volume_assessment")
-    if not isinstance(va, dict):
-        va = {}
-    if "estimated_pages" in va:
-        va["estimated_pages"] = _coerce_to_str(va.get("estimated_pages"))
-    else:
-        va["estimated_pages"] = ""
-    if "estimated_words" in va:
-        va["estimated_words"] = _coerce_to_str(va.get("estimated_words"))
-    else:
-        va["estimated_words"] = ""
-    va.setdefault("relative_to_average", "")
-    va.setdefault("relative_to_golden_standard", "")
-    va.setdefault("why", "")
-    va.setdefault("suggestion", "")
-    analysis_json["volume_assessment"] = va
-
-    # keywords_match
-    km = analysis_json.get("keywords_match")
-    if not isinstance(km, dict):
-        km = {}
-    km.setdefault("from_jd", [])
-    km.setdefault("required_keywords", [])
-    km.setdefault("found_exact", [])
-    km.setdefault("found_fuzzy", [])
-    km.setdefault("missing", [])
-    km.setdefault("coverage_percent", 0)
-    analysis_json["keywords_match"] = km
-
-    # top_issues
-    ti = analysis_json.get("top_issues")
-    if not isinstance(ti, list):
-        ti = []
-    analysis_json["top_issues"] = ti
-
-    # priority_fix_list
-    pfl = analysis_json.get("priority_fix_list")
-    if not isinstance(pfl, list):
-        pfl = []
-    analysis_json["priority_fix_list"] = pfl
-
-    # optional arrays for UI
-    if not isinstance(analysis_json.get("risks"), list):
-        analysis_json["risks"] = []
-    if not isinstance(analysis_json.get("candidate_questions"), list):
-        analysis_json["candidate_questions"] = []
-
-    return analysis_json
+	if resume_pdf is not None:
+		# Save to temp and extract
+		tmp_path = os.path.join(st.session_state.get("tmp_dir", "."), "_resume_tmp.pdf")
+		with open(tmp_path, "wb") as f:
+			f.write(resume_pdf.getbuffer())
+		return extract_text_from_pdf(tmp_path)
+	return resume_text_manual.strip()
 
 
 def format_analysis_report(analysis_json: dict) -> str:
 	"""Форматирует JSON-отчёт Анализатора в человекочитаемый Markdown"""
 	report = []
 	
+	# Список обработанных полей, чтобы потом вывести остальные
+	processed_fields = set()
+	
 	# Общая оценка
 	if "overall_assessment" in analysis_json:
 		report.append(f"### Общая оценка\n{analysis_json['overall_assessment']}\n")
-	
-	# Оценка понятности
-	if "clarity_assessment" in analysis_json:
-		clarity = analysis_json["clarity_assessment"]
-		rating = clarity.get("rating", "medium")
-		report.append("### Оценка понятности")
-		report.append(f"**Рейтинг:** {rating.upper()}")
-		report.append(f"**Обоснование:** {clarity.get('why', 'Не указано')}")
-		if clarity.get("suggestion"):
-			report.append(f"**Рекомендация:** {clarity['suggestion']}")
-		report.append("")
-	
-	# Оценка объема
-	if "volume_assessment" in analysis_json:
-		volume = analysis_json["volume_assessment"]
-		report.append("### Оценка объема")
-		# Отображаем как маркированный список, чтобы не сливалось в одну строку
-		if volume.get("estimated_words"):
-			report.append(f"- **Слов:** {volume['estimated_words']}")
-		if volume.get("estimated_pages"):
-			report.append(f"- **Страниц:** {volume['estimated_pages']}")
-		if volume.get("relative_to_average"):
-			report.append(f"- **Относительно среднего:** {volume['relative_to_average']}")
-		if volume.get("relative_to_golden_standard"):
-			report.append(f"- **Относительно эталона:** {volume['relative_to_golden_standard']}")
-		if volume.get("why"):
-			report.append(f"- **Почему:** {volume['why']}")
-		if volume.get("suggestion"):
-			report.append(f"- **Рекомендация:** {volume['suggestion']}")
-		report.append("")
+		processed_fields.add("overall_assessment")
 	
 	# Топ проблем
 	if "top_issues" in analysis_json and analysis_json["top_issues"]:
@@ -215,65 +67,43 @@ def format_analysis_report(analysis_json: dict) -> str:
 			report.append(f"**Проблема:** {issue.get('issue', 'Неизвестная проблема')}")
 			report.append(f"**Почему это важно:** {issue.get('why', 'Не указано')}")
 			report.append(f"**Решение:** {issue.get('fix_suggestion', 'Не указано')}\n")
+		processed_fields.add("top_issues")
 	
 	# Отсутствующие данные
-	if "completeness_check" in analysis_json and analysis_json["completeness_check"]:
+	if "missing_data" in analysis_json and analysis_json["missing_data"]:
 		report.append("## Отсутствующие данные")
-		for missing in analysis_json["completeness_check"]:
+		for missing in analysis_json["missing_data"]:
 			field_name = missing.get('field', 'Неизвестное поле')
-			status = missing.get('status', 'missing')
 			field_display = {
-				"contacts": "Контакты",
-				"role": "Целевая должность",
-				"seniority": "Уровень",
+				"metric": "Метрики и результаты",
 				"dates": "Даты работы", 
-				"companies": "Компании",
-				"responsibilities": "Обязанности",
-				"achievements_metrics": "Достижения и метрики",
-				"stack_tools": "Технологии и инструменты",
-				"education": "Образование",
-				"languages": "Языки",
 				"location": "Местоположение",
-				"links": "Ссылки"
+				"education": "Образование",
+				"contact": "Контакты",
+				"skills": "Навыки"
 			}.get(field_name, f"{field_name}")
-			
-			status_display = {
-				"present": "✅",
-				"partial": "⚠️",
-				"missing": "❌"
-			}.get(status, "❓")
-			
-			report.append(f"- **{field_display}:** {status_display} {missing.get('note', 'Не указано')}")
+			report.append(f"- **{field_display}:** {missing.get('note', 'Не указано')}")
 		report.append("")
+		processed_fields.add("missing_data")
 	
 	# Соответствие ключевых слов
 	if "keywords_match" in analysis_json:
 		keywords = analysis_json["keywords_match"]
 		report.append("### Соответствие ключевых слов")
-		
-		# Показываем ключевые слова из JD (если есть)
-		if keywords.get("from_jd"):
-			report.append(f"**Ключевые слова из вакансии:** {', '.join(keywords['from_jd'])}")
-		
-		# Показываем найденные точные совпадения
-		if keywords.get("found_exact"):
-			report.append(f"**Найдено точно:** {', '.join(keywords['found_exact'])}")
-		
-		# Показываем найденные приблизительные совпадения
-		if keywords.get("found_fuzzy"):
-			report.append(f"**Найдено приблизительно:** {', '.join(keywords['found_fuzzy'])}")
-		
-		# Показываем отсутствующие ключевые слова
+		if keywords.get("found_in_resume"):
+			report.append(f"**Найдено в резюме:** {', '.join(keywords['found_in_resume'])}")
 		if keywords.get("missing"):
 			report.append(f"**Отсутствует:** {', '.join(keywords['missing'])}")
-		
-		# Показываем процент покрытия
-		if keywords.get("coverage_percent") is not None:
-			coverage = keywords['coverage_percent']
-			coverage_emoji = "🟢" if coverage >= 80 else "🟡" if coverage >= 60 else "🔴"
-			report.append(f"**Покрытие ключевых слов:** {coverage_emoji} {coverage}%")
-		
 		report.append("")
+		processed_fields.add("keywords_match")
+	
+	# Риски
+	if "risks" in analysis_json and analysis_json["risks"]:
+		report.append("### Риски форматирования")
+		for risk in analysis_json["risks"]:
+			report.append(f"- {risk}")
+		report.append("")
+		processed_fields.add("risks")
 	
 	# Вопросы кандидату
 	if "candidate_questions" in analysis_json and analysis_json["candidate_questions"]:
@@ -281,6 +111,7 @@ def format_analysis_report(analysis_json: dict) -> str:
 		for i, question in enumerate(analysis_json["candidate_questions"], 1):
 			report.append(f"{i}. {question}")
 		report.append("")
+		processed_fields.add("candidate_questions")
 	
 	# Приоритетный список исправлений
 	if "priority_fix_list" in analysis_json and analysis_json["priority_fix_list"]:
@@ -288,264 +119,150 @@ def format_analysis_report(analysis_json: dict) -> str:
 		for i, fix in enumerate(analysis_json["priority_fix_list"], 1):
 			report.append(f"**{i}.** {fix}")
 		report.append("")
+		processed_fields.add("priority_fix_list")
+	
+	# Обработка всех остальных полей (для дополнительных оценок и метрик)
+	for key, value in analysis_json.items():
+		if key in processed_fields:
+			continue
+		
+		# Пропускаем пустые значения (None, пустые строки, пустые списки/словари)
+		if value is None:
+			continue
+		if isinstance(value, str) and not value.strip():
+			continue
+		if isinstance(value, (list, dict)) and len(value) == 0:
+			continue
+		
+		# Форматируем название поля (заглавная буква, замена подчеркиваний)
+		# Специальная обработка для полей "оценка_*"
+		if key.startswith("оценка_") or "оценка" in key.lower():
+			field_title = key.replace("_", " ").title()
+		else:
+			field_title = key.replace("_", " ").title()
+		
+		# Обработка разных типов значений
+		if isinstance(value, str):
+			report.append(f"### {field_title}\n{value}\n")
+		elif isinstance(value, dict):
+			report.append(f"### {field_title}")
+			for sub_key, sub_value in value.items():
+				sub_title = str(sub_key).replace("_", " ").title()
+				# Специальная обработка для полей "рейтинг" и "обоснование"
+				if sub_key in ["рейтинг", "rating"]:
+					# Преобразуем английские значения рейтинга в русские
+					if isinstance(sub_value, str):
+						rating_map = {
+							"high": "высокий",
+							"medium": "средний",
+							"MEDIUM": "средний",
+							"low": "низкий",
+							"optimal": "оптимальный",
+							"meets": "соответствует"
+						}
+						sub_value = rating_map.get(sub_value.lower(), sub_value)
+					report.append(f"**Рейтинг:** {sub_value}")
+				elif sub_key in ["обоснование", "justification", "reason"]:
+					report.append(f"**Обоснование:** {sub_value}")
+				else:
+					if isinstance(sub_value, str):
+						report.append(f"**{sub_title}:** {sub_value}")
+					elif isinstance(sub_value, (list, dict)) and len(sub_value) > 0:
+						report.append(f"**{sub_title}:** {sub_value}")
+					else:
+						report.append(f"**{sub_title}:** {sub_value}")
+			report.append("")
+		elif isinstance(value, list):
+			report.append(f"### {field_title}")
+			for item in value:
+				if isinstance(item, str):
+					report.append(f"- {item}")
+				elif isinstance(item, dict):
+					# Если это объект, выводим его поля
+					for item_key, item_value in item.items():
+						item_title = str(item_key).replace("_", " ").title()
+						report.append(f"  - **{item_title}:** {item_value}")
+				else:
+					report.append(f"- {item}")
+			report.append("")
+		else:
+			report.append(f"### {field_title}\n{value}\n")
 	
 	return "\n".join(report)
 
 
-st.header("🔹 Анализатор")
+st.header("🔹 1) Анализатор")
 if st.button("Запустить анализ"):
-    resume_text = load_resume_text()
-    if not resume_text:
-        st.warning("Требуется PDF резюме")
-    else:
-        # Normalize JD: if too short/missing, force empty to trigger generic analysis scenario
-        jd_for_model = "" if _is_job_description_empty(job_description or "") else (job_description or "")
-        user_prompt = ANALYZER_USER_TEMPLATE.format(
-            resume_text=resume_text,
-            job_description=jd_for_model,
-        )
-        messages = [
-            {"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-        with st.spinner("Модель анализирует резюме…"):
-            try:
-                analysis_json = chat_json(
-                    messages=messages,
-                    model=ANALYZER_MODEL,
-                )
-                
-                # Проверяем на ошибки в ответе анализатора
-                if isinstance(analysis_json, dict) and "error" in analysis_json:
-                    reason = str(analysis_json.get("reason", "")).lower()
-                    # Fallback: если модель ошиблась из-за пустого/короткого JD — принудительно повторим в режиме общего анализа
-                    if any(k in reason for k in ["job description", "vacancy", "описание вакансии"]) and any(
-                        k in reason for k in ["missing", "short", "корот", "нет", "пуст"]
-                    ):
-                        fallback_prompt = ANALYZER_USER_TEMPLATE.format(
-                            resume_text=resume_text,
-                            job_description="",
-                        )
-                        fallback_messages = [
-                            {"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
-                            {"role": "user", "content": "ВНИМАНИЕ: описание вакансии отсутствует. Выполняй общий анализ, не возвращай ошибку."},
-                            {"role": "user", "content": fallback_prompt},
-                        ]
-                        try:
-                            analysis_json_fb = chat_json(
-                                messages=fallback_messages,
-                                model=ANALYZER_MODEL,
-                            )
-                            # Если вернулся объект-ошибка ИЛИ JSON не соответствует минимальным требованиям — попробуем строгую регенерацию
-                            if (isinstance(analysis_json_fb, dict) and "error" in analysis_json_fb) or not _is_valid_analysis(analysis_json_fb):
-                                strict_prompt = ANALYZER_USER_TEMPLATE.format(
-                                    resume_text=resume_text,
-                                    job_description="",
-                                )
-                                strict_messages = [
-                                    {"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
-                                    {"role": "user", "content": "СТРОГИЙ РЕЖИМ: верни ТОЛЬКО валидный JSON строго по JSON Schema без ошибок и свободного текста."},
-                                    {"role": "user", "content": strict_prompt},
-                                ]
-                                analysis_json_fb2 = chat_json(
-                                    messages=strict_messages,
-                                    model=ANALYZER_MODEL,
-                                )
-                                if isinstance(analysis_json_fb2, dict) and "error" not in analysis_json_fb2 and _is_valid_analysis(analysis_json_fb2):
-                                    st.session_state["analysis_json"] = analysis_json_fb2
-                                    st.info("Описание вакансии отсутствует или слишком короткое — выполнен общий анализ резюме.")
-                                    st.success("Готово: отчёт сформирован")
-                                    # Завершили обработку
-                                    # (на уровне скрипта нельзя использовать return)
-                                # Если снова не удалось — покажем исходную ошибку
-                                st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
-                                # Завершение ветки строгой регенерации
-                            if isinstance(analysis_json_fb, dict) and "error" not in analysis_json_fb:
-                                st.session_state["analysis_json"] = analysis_json_fb
-                                if _is_job_description_empty(job_description or ""):
-                                    st.info("Описание вакансии отсутствует или слишком короткое — выполнен общий анализ резюме.")
-                                else:
-                                    st.info("Модель не смогла использовать описание вакансии — выполнен общий анализ резюме.")
-                                st.success("Готово: отчёт сформирован")
-                            else:
-                                st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
-                        except Exception as _:
-                            st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
-                    else:
-                        # Попробуем авто-восстановление даже при ошибке, если объект присутствует
-                        repaired_err = _repair_analysis_min_schema(analysis_json if isinstance(analysis_json, dict) else {})
-                        if _is_valid_analysis(repaired_err):
-                            st.session_state["analysis_json"] = repaired_err
-                            st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме (из ответа с ошибкой).")
-                            st.success("Готово: отчёт сформирован")
-                        else:
-                            st.error(f"Ошибка анализатора: {analysis_json.get('reason', 'Неизвестная ошибка')}")
-                else:
-                    # Если вернулся JSON без ключа error, но он не соответствует схеме — попросим строгую регенерацию
-                    if not _is_valid_analysis(analysis_json):
-                        strict_prompt = ANALYZER_USER_TEMPLATE.format(
-                            resume_text=resume_text,
-                            job_description=jd_for_model,
-                        )
-                        strict_messages = [
-                            {"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
-                            {"role": "user", "content": "СТРОГИЙ РЕЖИМ: верни ТОЛЬКО валидный JSON строго по JSON Schema без ошибок и свободного текста."},
-                            {"role": "user", "content": strict_prompt},
-                        ]
-                        try:
-                            analysis_json2 = chat_json(
-                                messages=strict_messages,
-                                model=ANALYZER_MODEL,
-                            )
-                            if isinstance(analysis_json2, dict) and "error" not in analysis_json2 and _is_valid_analysis(analysis_json2):
-                                st.session_state["analysis_json"] = analysis_json2
-                                st.success("Готово: отчёт сформирован")
-                            else:
-                                # Попытка авто-восстановления минимального набора полей
-                                repaired = _repair_analysis_min_schema(analysis_json2 if isinstance(analysis_json2, dict) else {})
-                                if _is_valid_analysis(repaired):
-                                    st.session_state["analysis_json"] = repaired
-                                    st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме.")
-                                    st.success("Готово: отчёт сформирован")
-                                else:
-                                    st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
-                        except Exception as _:
-                            repaired = _repair_analysis_min_schema(analysis_json if isinstance(analysis_json, dict) else {})
-                            if _is_valid_analysis(repaired):
-                                st.session_state["analysis_json"] = repaired
-                                st.info("Ответ анализатора был автоматически приведён к минимально валидной схеме.")
-                                st.success("Готово: отчёт сформирован")
-                            else:
-                                st.error("Ошибка анализатора: ответ не соответствует JSON Schema")
-                    else:
-                        st.session_state["analysis_json"] = analysis_json
-                        st.success("Готово: отчёт сформирован")
-            except Exception as e:
-                st.error(f"Ошибка LLM: {e}")
+	resume_text = load_resume_text()
+	if not resume_text:
+		st.warning("Требуется резюме (PDF или текст)")
+	else:
+		user_prompt = ANALYZER_USER_TEMPLATE.format(
+			resume_text=resume_text,
+			job_description=job_description or "",
+		)
+		messages = [
+			{"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
+			{"role": "user", "content": user_prompt},
+		]
+		with st.spinner("Модель анализирует резюме…"):
+			try:
+				analysis_json = chat_json(
+					messages=messages,
+					model=ANALYZER_MODEL,
+					temperature=float(analyzer_temp),
+				)
+				st.session_state["analysis_json"] = analysis_json
+				st.success("Готово: отчёт сформирован")
+			except Exception as e:
+				st.error(f"Ошибка LLM: {e}")
 
-# Показываем результаты анализа (только форматированный отчёт)
+# Показываем результаты анализа
 if "analysis_json" in st.session_state:
-    analysis_json = st.session_state["analysis_json"]
-    st.markdown(format_analysis_report(analysis_json))
+	analysis_json = st.session_state["analysis_json"]
+	
+	# Создаём табы для разных форматов
+	tab1, tab2 = st.tabs(["Анализ резюме", "JSON данные"])
+	
+	with tab1:
+		st.markdown(format_analysis_report(analysis_json))
+	
+	with tab2:
+		st.code(orjson.dumps(analysis_json, option=orjson.OPT_INDENT_2).decode(), language="json")
 
 
-st.header("🔹 Редактор")
-# Version selector for editor stage (Russian labels)
-col_v1, col_v2 = st.columns([1, 3])
-with col_v1:
-    resume_version_label = st.radio("Версия резюме", options=["Короткая", "Расширенная"], index=0)
-resume_version = "concise" if resume_version_label == "Короткая" else "full"
-
+st.header("🔹 2) Редактор")
 if st.button("Сгенерировать улучшенное резюме"):
-    resume_text = load_resume_text()
-    if not resume_text:
-        st.warning("Требуется PDF резюме")
-    else:
-        if "analysis_json" not in st.session_state:
-            st.info("Сначала запустите Анализатор — его вывод используется Редактором")
-        analysis_json_str = orjson.dumps(st.session_state.get("analysis_json", {})).decode()
-        user_prompt = EDITOR_USER_TEMPLATE.format(
-            analyzer_json=analysis_json_str,
-            resume_text=resume_text,
-            job_description=job_description or "",
-            resume_version=resume_version,
-        )
-        messages = [
-            {"role": "system", "content": EDITOR_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-        with st.spinner("Модель переписывает резюме…"):
-            try:
-                editor_output = chat_text(
-                    messages=messages,
-                    model=EDITOR_MODEL,
-                )
-                
-                # Проверяем на ошибки в ответе редактора
-                if editor_output.strip().startswith('{"error":'):
-                    try:
-                        error_json = orjson.loads(editor_output)
-                        st.error(f"Ошибка редактора: {error_json.get('details', 'Неизвестная ошибка')}")
-                    except:
-                        st.error(f"Ошибка редактора: {editor_output}")
-                else:
-                    st.session_state["editor_output"] = editor_output
-                    st.success("Готово: резюме сгенерировано")
-            except Exception as e:
-                st.error(f"Ошибка LLM: {e}")
+	resume_text = load_resume_text()
+	if not resume_text:
+		st.warning("Требуется резюме (PDF или текст)")
+	else:
+		if "analysis_json" not in st.session_state:
+			st.info("Сначала запустите Анализатор — его вывод используется Редактором")
+		analysis_json_str = orjson.dumps(st.session_state.get("analysis_json", {})).decode()
+		user_prompt = EDITOR_USER_TEMPLATE.format(
+			analyzer_json=analysis_json_str,
+			resume_text=resume_text,
+			job_description=job_description or "",
+		)
+		messages = [
+			{"role": "system", "content": EDITOR_SYSTEM_PROMPT},
+			{"role": "user", "content": user_prompt},
+		]
+		with st.spinner("Модель переписывает резюме…"):
+			try:
+				editor_output = chat_text(
+					messages=messages,
+					model=EDITOR_MODEL,
+					temperature=float(editor_temp),
+				)
+				st.session_state["editor_output"] = editor_output
+				st.success("Готово: резюме сгенерировано")
+			except Exception as e:
+				st.error(f"Ошибка LLM: {e}")
 
 if "editor_output" in st.session_state:
 	st.subheader("Итог (Markdown с разделами)")
 	st.markdown(st.session_state["editor_output"])  # Editor выводит Маркдаун и списки
 
 st.divider()
-
-st.header("🔹 Оценка зарплатной вилки (RUB/мес)")
-with st.expander("Показать/скрыть оценку зарплаты"):
-	import importlib.util, sys
-
-	def _get_estimate_salary_from_resume():
-		try:
-			from salary_estimator import estimate_salary_from_resume  # type: ignore
-			return estimate_salary_from_resume
-		except ModuleNotFoundError:
-			# Fallback: загрузить модуль по пути файла рядом с app.py
-			base_dir = os.path.dirname(__file__)
-			module_path = os.path.join(base_dir, "salary_estimator.py")
-			spec = importlib.util.spec_from_file_location("salary_estimator", module_path)
-			if spec and spec.loader:
-				mod = importlib.util.module_from_spec(spec)
-				sys.modules["salary_estimator"] = mod
-				spec.loader.exec_module(mod)  # type: ignore
-				return getattr(mod, "estimate_salary_from_resume")
-			raise
-
-	try:
-		estimator = _get_estimate_salary_from_resume()
-		_resume_text = load_resume_text()
-		if not _resume_text:
-			st.info("Загрузите PDF резюме, чтобы автоматически оценить вилку и подходящие роли.")
-		else:
-			result = estimator(
-				resume_text=_resume_text,
-				job_description=job_description or None,
-				model=ANALYZER_MODEL,
-				temperature=0.1,
-			)
-			st.subheader("Подходящие направления и профессии")
-			roles = result.get("roles", []) or []
-			if roles:
-				for r in roles:
-					title = r.get("title", "—")
-					dirn = r.get("direction", "—")
-					sen = r.get("seniority") or "—"
-					reason = r.get("fit_reason", "")
-					st.markdown(f"- **{title}** — {dirn} ({sen})  ")
-					if reason:
-						st.caption(reason)
-			st.subheader("Оценка рыночной вилки (RUB/мес)")
-			est_overall = result.get("estimate_rub_month", {})
-			if est_overall:
-				st.markdown(f"**Итого:** {est_overall.get('min', '—')} — {est_overall.get('max', '—')} (медиана: {est_overall.get('median', '—')})")
-			ranges = result.get("ranges_per_role", []) or []
-			if ranges:
-				with st.expander("Диапазоны по ролям"):
-					for rr in ranges:
-						st.write(f"- {rr.get('title', '—')}: {rr.get('min', '—')} — {rr.get('max', '—')} (медиана: {rr.get('median', '—')})")
-			conf = result.get("confidence", "—")
-			st.markdown(f"**Доверие:** {conf}")
-			notes = result.get("notes", "")
-			if notes:
-				st.markdown(f"**Примечания:** {notes}")
-			sources = result.get("sources", [])
-			if sources:
-				with st.expander("Источники"):
-					for s in sources:
-						st.write(f"- {s}")
-			assumptions = result.get("assumptions", [])
-			if assumptions:
-				with st.expander("Допущения"):
-					for a in assumptions:
-						st.write(f"- {a}")
-	except Exception as e:
-		st.error(f"Ошибка при оценке зарплаты: {e}")
